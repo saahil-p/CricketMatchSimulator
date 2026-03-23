@@ -1,14 +1,13 @@
 package org.example.cricketmatchsimulator.repository;
 
 import org.example.cricketmatchsimulator.entities.Player;
-import org.springframework.stereotype.Repository;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-@Repository
+//@Repository  // Disabled to use MongoDB repository instead
 public class InMemoryPlayerRepositoryImpl implements PlayerRepositoryInterface{
 
     private final Map<String, Player> playerStorage = new HashMap<>();

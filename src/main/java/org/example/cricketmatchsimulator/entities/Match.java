@@ -3,15 +3,19 @@ package org.example.cricketmatchsimulator.entities;
 import lombok.Data;
 import lombok.NonNull;
 import org.example.cricketmatchsimulator.enums.MatchType;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@Document(collection = "matches")
 @Data
 public class Match {
-    private final String matchId = UUID.randomUUID().toString();
+    @Id
+    private String matchId = UUID.randomUUID().toString();
     @NonNull
     private Team team1;
     @NonNull

@@ -67,8 +67,8 @@ public class MatchService {
     }
 
     private void pickNextBowler(Match currentMatch, int inningsNumber, Player currentBowler){
-        Map<Player, Integer> oversBowled = currentMatch.getInnings().get(inningsNumber).getOversBowled();
-        oversBowled.put(currentBowler, oversBowled.getOrDefault(currentBowler, 0) + 1);
+        Map<String, Integer> oversBowled = currentMatch.getInnings().get(inningsNumber).getOversBowled();
+        oversBowled.put(currentBowler.getPlayerId(), oversBowled.getOrDefault(currentBowler.getPlayerId(), 0) + 1);
 
         Innings innings = currentMatch.getInnings().get(inningsNumber);
         int maxOvers = currentMatch.getMatchType() == MatchType.T20 ? 4 : 10;
@@ -77,7 +77,7 @@ public class MatchService {
                 .filter(player -> player.getRole() == PlayerRole.BOWLER ||
                         player.getRole() == PlayerRole.ALL_ROUNDER)
                 .filter(player -> !player.equals(currentBowler))
-                .filter(player -> oversBowled.getOrDefault(player, 0) < maxOvers)  // Check quota in filter!
+                .filter(player -> oversBowled.getOrDefault(player.getPlayerId(), 0) < maxOvers)  // Check quota in filter!
                 .findAny()
                 .orElseThrow(() -> new RuntimeException("No more bowlers available"));
 
@@ -88,6 +88,13 @@ public class MatchService {
 
     private void simulateInnings(Match currentMatch, int inningsNumber){
         int inningsScore = 0;
+        int targetScore = -1;
+
+        // If this is the second innings, get the target score
+        if(inningsNumber == 1){
+            targetScore = currentMatch.getTeam1Score();
+        }
+
         while(currentMatch.getMatchType() == MatchType.T20 && currentMatch.getInnings().get(inningsNumber).getCurrentOver() < currentMatch.getOvers() || currentMatch.getMatchType() == MatchType.ODI && currentMatch.getInnings().get(inningsNumber).getCurrentOver() < currentMatch.getOvers()) {
             Player currentBowler = currentMatch.getInnings().get(inningsNumber).getBowler();
             while(!isOverCompleted(currentMatch,inningsNumber)){
@@ -99,6 +106,19 @@ public class MatchService {
                     inningsScore += score;
                 }
                 updateScore(currentMatch, inningsNumber);
+
+                // Check if chasing team has won (second innings only)
+                if(inningsNumber == 1 && inningsScore > targetScore){
+                    // Chasing team has exceeded the target, match ends
+                    if(currentMatch.getTeam1().getTeamId().equals(currentMatch.getInnings().get(inningsNumber).getBattingTeam().getTeamId())) {
+                        currentMatch.setTeam1Score(inningsScore);
+                    }
+                    else{
+                        currentMatch.setTeam2Score(inningsScore);
+                    }
+                    return;
+                }
+
                 if(currentMatch.getInnings().get(inningsNumber).getBalls().get(currentMatch.getInnings().get(inningsNumber).getBalls().size() - 1).getIsWicket()){
                     handleWicket(currentMatch, inningsNumber);
                 }
@@ -110,8 +130,10 @@ public class MatchService {
             if(currentMatch.getInnings().get(inningsNumber).getIsAllOut()){
                 break;
             }
+
+            rotateStrike(currentMatch, inningsNumber);
         }
-        if(currentMatch.getTeam1() == currentMatch.getInnings().get(inningsNumber).getBattingTeam()) {
+        if(currentMatch.getTeam1().getTeamId().equals(currentMatch.getInnings().get(inningsNumber).getBattingTeam().getTeamId())) {
             currentMatch.setTeam1Score(inningsScore);
         }
         else{
@@ -129,8 +151,9 @@ public class MatchService {
 
         Match currentMatch;
 
-        if(matchRepository.findByTeam1AndTeam2(team1.getName(), team2.getName(),matchDate).isPresent()){
-                currentMatch = matchRepository.findByTeam1AndTeam2(team1.getName(), team2.getName(),matchDate).get().get(0);
+        Optional<List<Match>> existingMatches = matchRepository.findByTeam1AndTeam2(team1.getName(), team2.getName(), matchDate);
+        if(existingMatches.isPresent() && !existingMatches.get().isEmpty()){
+            currentMatch = existingMatches.get().get(0);
         }
         else {
             currentMatch = createMatch(team1.getName(), team2.getName(), matchType, matchDate);
@@ -150,8 +173,8 @@ public class MatchService {
             secondInnings = new Innings(team1, team2, team2BattingOrder, team2BattingOrder.get(0), team2BattingOrder.get(1), team1.getPlayers().stream().filter(player -> player.getRole() == BOWLER || player.getRole() == ALL_ROUNDER).findFirst().orElseThrow(() -> new RuntimeException("No bowler found")));
         }
 
-        firstInnings.getBowlingTeam().getPlayers().stream().filter(player -> player.getRole() == BOWLER || player.getRole() == ALL_ROUNDER).forEach(player -> firstInnings.getOversBowled().put(player, 0));
-        secondInnings.getBowlingTeam().getPlayers().stream().filter(player -> player.getRole() == BOWLER || player.getRole() == ALL_ROUNDER).forEach(player -> secondInnings.getOversBowled().put(player, 0));
+        firstInnings.getBowlingTeam().getPlayers().stream().filter(player -> player.getRole() == BOWLER || player.getRole() == ALL_ROUNDER).forEach(player -> firstInnings.getOversBowled().put(player.getPlayerId(), 0));
+        secondInnings.getBowlingTeam().getPlayers().stream().filter(player -> player.getRole() == BOWLER || player.getRole() == ALL_ROUNDER).forEach(player -> secondInnings.getOversBowled().put(player.getPlayerId(), 0));
 
         currentMatch.getInnings().add(firstInnings);
         simulateInnings(currentMatch, 0);
@@ -268,10 +291,16 @@ public class MatchService {
         }
 
         // Update overs bowled for each bowler
-        for(Map.Entry<Player, Integer> entry : innings.getOversBowled().entrySet()){
-            String bowlerName = entry.getKey().getName();
-            if(bowlingStats.containsKey(bowlerName)){
-                BowlerStats bowlerStats = bowlingStats.get(bowlerName);
+        for(Map.Entry<String, Integer> entry : innings.getOversBowled().entrySet()){
+            String playerId = entry.getKey();
+            // Find the player by ID to get their name
+            Player bowler = innings.getBowlingTeam().getPlayers().stream()
+                    .filter(p -> p.getPlayerId().equals(playerId))
+                    .findFirst()
+                    .orElse(null);
+
+            if(bowler != null && bowlingStats.containsKey(bowler.getName())){
+                BowlerStats bowlerStats = bowlingStats.get(bowler.getName());
                 int completedOvers = entry.getValue();
                 int ballsInCurrentOver = bowlerStats.getBallsBowled() % 6;
                 bowlerStats.setOversBowled(completedOvers);

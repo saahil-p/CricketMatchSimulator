@@ -9,7 +9,7 @@ import java.util.*;
 public class Innings {
     @NonNull
     private Team bowlingTeam;
-    private Map<Player, Integer> oversBowled = new HashMap<>();
+    private Map<String, Integer> oversBowled = new HashMap<>(); // Key is Player ID
     @NonNull
     private Team battingTeam;
     @NonNull

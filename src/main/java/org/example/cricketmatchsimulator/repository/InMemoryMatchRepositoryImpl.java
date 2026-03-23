@@ -6,7 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.util.*;
 
-@Repository
+//@Repository  // Disabled to use MongoDB repository instead
 public class InMemoryMatchRepositoryImpl implements MatchRepositoryInterface {
     private final Map<String, Match> matchStorage = new HashMap<>();
 
