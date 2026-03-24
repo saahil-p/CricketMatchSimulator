@@ -55,15 +55,16 @@ The Cricket Match Simulator is a RESTful API application that allows users to:
 ┌─────────────────────────────────────────────────────────────┐
 │                 Repository Layer                             │
 │  ┌────────────────────┬────────────────────┬──────────────┐ │
-│  │MatchRepository     │TeamRepository      │PlayerRepo    │ │
-│  │(InMemory)          │(InMemory)          │(InMemory)    │ │
+│  │MongoMatchRepo      │MongoTeamRepo       │MongoPlayerRe │ │
+│  │(MongoDB)           │(MongoDB)           │(MongoDB)     │ │
 │  └────────────────────┴────────────────────┴──────────────┘ │
 └──────────────────────┬──────────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   Data Storage                               │
-│                  In-Memory HashMap                           │
+│                  MongoDB Database                            │
+│              (cricket_match_simulator)                       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,8 +72,9 @@ The Cricket Match Simulator is a RESTful API application that allows users to:
 
 1. **API Layer**: Exposes REST endpoints for team and match management
 2. **Service Layer**: Contains business logic for match simulation
-3. **Repository Layer**: Handles data persistence (In-Memory by default)
+3. **Repository Layer**: Handles data persistence using MongoDB
 4. **Entity Layer**: Domain models (Team, Player, Match, Innings, Ball)
+5. **Database Layer**: MongoDB for persistent storage
 
 ---
 
@@ -220,11 +222,13 @@ The Cricket Match Simulator is a RESTful API application that allows users to:
 - **Framework**: Spring Boot 4.0.3
 - **Language**: Java 17
 - **Build Tool**: Gradle 9.3.1
+- **Database**: MongoDB
 - **Dependencies**:
   - Spring Boot Starter Web
+  - Spring Boot Starter Data MongoDB
   - Lombok (for boilerplate reduction)
   - JUnit 5 (for testing)
-- **Storage**: In-Memory HashMap (default)
+- **Storage**: MongoDB (persistent storage)
 
 ---
 
@@ -234,6 +238,53 @@ The Cricket Match Simulator is a RESTful API application that allows users to:
 
 - Java 17 or higher
 - Gradle 9.3.1 or higher (or use included Gradle wrapper)
+- MongoDB 4.0 or higher
+- Docker (optional, for running MongoDB in a container)
+
+### MongoDB Setup
+
+#### Option 1: Using Docker (Recommended)
+
+```bash
+# Pull and run MongoDB container
+docker run -d \
+  --name cricket-mongodb \
+  -p 27018:27017 \
+  -e MONGO_INITDB_DATABASE=cricket_match_simulator \
+  mongo:latest
+
+# Verify MongoDB is running
+docker ps | grep cricket-mongodb
+```
+
+#### Option 2: Local MongoDB Installation
+
+1. **Install MongoDB** from [MongoDB Official Website](https://www.mongodb.com/try/download/community)
+
+2. **Start MongoDB service**
+   ```bash
+   # macOS (using Homebrew)
+   brew services start mongodb-community
+
+   # Linux (systemd)
+   sudo systemctl start mongod
+
+   # Windows
+   net start MongoDB
+   ```
+
+3. **Configure MongoDB** (if using default port 27017, update `application.properties`)
+
+### Application Configuration
+
+The application is configured to connect to MongoDB on `localhost:27018`. If your MongoDB is running on a different host/port, update `src/main/resources/application.properties`:
+
+```properties
+spring.data.mongodb.host=localhost
+spring.data.mongodb.port=27018
+spring.data.mongodb.database=cricket_match_simulator
+spring.data.mongodb.auto-index-creation=true
+```
 
 ### Installation & Running
 
@@ -243,20 +294,26 @@ The Cricket Match Simulator is a RESTful API application that allows users to:
    cd CricketMatchSimulator
    ```
 
-2. **Build the project**
+2. **Ensure MongoDB is running** (see MongoDB Setup above)
+
+3. **Build the project**
    ```bash
    ./gradlew build
    ```
 
-3. **Run the application**
+4. **Run the application**
    ```bash
    ./gradlew bootRun
    ```
 
-4. **Application will start on**
+5. **Application will start on**
    ```
    http://localhost:8080
    ```
+
+6. **Verify MongoDB connection**
+   - Check application logs for MongoDB connection confirmation
+   - You should see MongoDB configuration details printed on startup
 
 ---
 
@@ -264,18 +321,21 @@ The Cricket Match Simulator is a RESTful API application that allows users to:
 
 ### Team Management
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/teams` | Create a new team with players |
+| Method | Endpoint | Description | Required Parameters |
+|--------|----------|-------------|---------------------|
+| POST | `/api/v1/teams` | Create a new team with players | `name`, Request Body: Array of Player objects |
+| GET | `/api/v1/teams/search/searchByName` | Get team by name | `name` |
+| GET | `/api/v1/teams/search/searchById` | Get team by ID | `teamId` |
+| GET | `/api/v1/teams/search/all` | Get all teams | None |
 
 ### Match Management
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/matches` | Create a match between two teams |
-| GET | `/api/v1/matches` | Get matches between two specific teams |
-| GET | `/api/v1/matches/by-team` | Get all matches for a specific team |
-| GET | `/api/v1/matches/simulate` | Simulate a complete match |
+| Method | Endpoint | Description | Required Parameters |
+|--------|----------|-------------|---------------------|
+| POST | `/api/v1/matches` | Create a match between two teams | `team1`, `team2`, `matchType`, `matchDate` |
+| GET | `/api/v1/matches` | Get matches between two specific teams | `team1`, `team2` |
+| GET | `/api/v1/matches/by-team` | Get all matches for a specific team | `team` |
+| GET | `/api/v1/matches/simulate` | Simulate a complete match | `team1`, `team2`, `matchType`, `matchDate` |
 
 ---
 
@@ -326,7 +386,7 @@ curl -X POST "http://localhost:8080/api/v1/teams?name=Australia" \
 ### 3. Simulate a T20 Match
 
 ```bash
-curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=T20"
+curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=T20&matchDate=2026-03-24"
 ```
 
 **Expected Response:**
@@ -374,13 +434,13 @@ curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Aus
 ### 4. Simulate an ODI Match
 
 ```bash
-curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=ODI"
+curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=ODI&matchDate=2026-03-24"
 ```
 
 ### 5. Create a Match (Without Simulation)
 
 ```bash
-curl -X POST "http://localhost:8080/api/v1/matches?team1=India&team2=Australia&matchType=T20"
+curl -X POST "http://localhost:8080/api/v1/matches?team1=India&team2=Australia&matchType=T20&matchDate=2026-03-24"
 ```
 
 **Expected Response:**
@@ -470,8 +530,9 @@ curl -X GET "http://localhost:8080/api/v1/matches/by-team?team=India"
 
 1. **Repository Pattern**: Abstraction layer for data access
    - `MatchRepositoryInterface`, `TeamRepositoryInterface`, `PlayerRepositoryInterface`
-   - Implementations: `InMemoryMatchRepositoryImpl`, `InMemoryTeamRepositoryImpl`, `InMemoryPlayerRepositoryImpl`
-   - Allows easy switching between different storage implementations
+   - Implementations: `MongoMatchRepository`, `MongoTeamRepository`, `MongoPlayerRepository`
+   - Uses Spring Data MongoDB for database operations
+   - Custom queries using `@Query` annotations for complex searches
 
 2. **Service Layer Pattern**: Business logic separation
    - `MatchService`: Match creation and simulation logic
@@ -490,9 +551,9 @@ Controller (validates request params)
     ↓
 Service (business logic, match simulation)
     ↓
-Repository (data persistence)
+Repository (Spring Data MongoDB)
     ↓
-In-Memory Storage
+MongoDB Database
     ↓
 Response back to Client
 ```
@@ -544,9 +605,9 @@ CricketMatchSimulator/
 │   │   │   │   ├── MatchType.java
 │   │   │   │   └── PlayerRole.java
 │   │   │   ├── repository/
-│   │   │   │   ├── InMemoryMatchRepositoryImpl.java
-│   │   │   │   ├── InMemoryPlayerRepositoryImpl.java
-│   │   │   │   ├── InMemoryTeamRepositoryImpl.java
+│   │   │   │   ├── MongoMatchRepository.java
+│   │   │   │   ├── MongoPlayerRepository.java
+│   │   │   │   ├── MongoTeamRepository.java
 │   │   │   │   ├── MatchRepositoryInterface.java
 │   │   │   │   ├── PlayerRepositoryInterface.java
 │   │   │   │   └── TeamRepositoryInterface.java
@@ -566,6 +627,143 @@ CricketMatchSimulator/
 ├── gradlew.bat
 └── README.md
 ```
+
+---
+
+## MongoDB Collections
+
+The application uses the following MongoDB collections:
+
+### 1. **teams** Collection
+Stores team information with embedded player documents.
+
+**Example Document:**
+```json
+{
+  "_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "teamId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "name": "India",
+  "players": [
+    {
+      "playerId": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Rohit Sharma",
+      "role": "BATTER"
+    },
+    {
+      "playerId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "name": "Jasprit Bumrah",
+      "role": "BOWLER"
+    }
+  ],
+  "_class": "org.example.cricketmatchsimulator.entities.Team"
+}
+```
+
+### 2. **matches** Collection
+Stores match information with embedded innings and ball-by-ball data.
+
+**Example Document:**
+```json
+{
+  "_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "matchId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "team1": {
+    "teamId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "name": "India",
+    "players": [...]
+  },
+  "team2": {
+    "teamId": "8e9f0a1b-2c3d-4e5f-6789-0a1b2c3d4e5f",
+    "name": "Australia",
+    "players": [...]
+  },
+  "team1Score": 165,
+  "team2Score": 158,
+  "matchType": "T20",
+  "matchDate": "2026-03-24",
+  "innings": [...],
+  "tossWinner": null,
+  "matchWinner": "India",
+  "_class": "org.example.cricketmatchsimulator.entities.Match"
+}
+```
+
+### 3. **players** Collection
+Stores individual player information (referenced in teams).
+
+**Example Document:**
+```json
+{
+  "_id": "550e8400-e29b-41d4-a716-446655440000",
+  "playerId": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Rohit Sharma",
+  "role": "BATTER",
+  "_class": "org.example.cricketmatchsimulator.entities.Player"
+}
+```
+
+### MongoDB Queries
+
+The application uses custom MongoDB queries for efficient data retrieval:
+
+**Find matches between two teams:**
+```javascript
+{ $or: [
+  { 'team1.name': 'India', 'team2.name': 'Australia' },
+  { 'team1.name': 'Australia', 'team2.name': 'India' }
+] }
+```
+
+**Find all matches for a team:**
+```javascript
+{ $or: [
+  { 'team1.name': 'India' },
+  { 'team2.name': 'India' }
+] }
+```
+
+**Find team by name:**
+```javascript
+{ 'name': 'India' }
+```
+
+### Accessing MongoDB Data Directly
+
+You can access the MongoDB database directly using the MongoDB shell or MongoDB Compass:
+
+**Using MongoDB Shell (mongosh):**
+```bash
+# Connect to MongoDB
+docker exec -it cricket-mongodb mongosh
+
+# Switch to the database
+use cricket_match_simulator
+
+# View all teams
+db.teams.find().pretty()
+
+# View all matches
+db.matches.find().pretty()
+
+# View all players
+db.players.find().pretty()
+
+# Count documents
+db.teams.countDocuments()
+db.matches.countDocuments()
+
+# Find specific team
+db.teams.findOne({ "name": "India" })
+
+# Find matches for a specific team
+db.matches.find({ $or: [ { "team1.name": "India" }, { "team2.name": "India" } ] }).pretty()
+```
+
+**Using MongoDB Compass:**
+1. Download and install [MongoDB Compass](https://www.mongodb.com/products/compass)
+2. Connect using connection string: `mongodb://localhost:27018`
+3. Select database: `cricket_match_simulator`
+4. Browse collections: `teams`, `matches`, `players`
 
 ---
 
@@ -600,14 +798,16 @@ CricketMatchSimulator/
 - Wicket handling and all-out scenarios
 
 ✅ **Match Tracking**
-- Store match history
+- Store match history in MongoDB
 - Query matches by team
 - Query matches between specific teams
+- Persistent storage across application restarts
 
 ✅ **Extensible Architecture**
 - Repository pattern for easy storage switching
 - Service layer for business logic
 - Clean separation of concerns
+- MongoDB integration with Spring Data
 
 ---
 
@@ -621,11 +821,12 @@ CricketMatchSimulator/
 - Player form and performance tracking
 - Match commentary generation
 - WebSocket support for live match updates
-- Database integration for persistent storage
 - Authentication and authorization
 - Match scheduling and tournaments
 - Advanced bowling strategies (yorkers, bouncers)
 - Fielding positions and catches
+- MongoDB aggregation pipelines for advanced analytics
+- Indexing optimization for faster queries
 
 ---
 
@@ -680,7 +881,7 @@ curl -X POST "http://localhost:8080/api/v1/teams?name=Australia" \
 
 **Step 4: Simulate a T20 Match**
 ```bash
-curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=T20"
+curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=T20&matchDate=2026-03-24"
 ```
 
 **Step 5: View Match History**
@@ -696,30 +897,30 @@ curl -X GET "http://localhost:8080/api/v1/matches/by-team?team=India"
 
 **T20 Match (20 overs)**
 ```bash
-curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=T20"
+curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=T20&matchDate=2026-03-24"
 ```
 
 **ODI Match (50 overs)**
 ```bash
-curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=ODI"
+curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=ODI&matchDate=2026-03-24"
 ```
 
 **TEST Match (unlimited overs)**
 ```bash
-curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=TEST"
+curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Australia&matchType=TEST&matchDate=2026-03-24"
 ```
 
 ### Error Scenarios
 
 **Team Not Found**
 ```bash
-curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Pakistan&matchType=T20"
+curl -X GET "http://localhost:8080/api/v1/matches/simulate?team1=India&team2=Pakistan&matchType=T20&matchDate=2026-03-24"
 # Response: 500 Internal Server Error - "Team not found: Pakistan"
 ```
 
 **Same Team Playing**
 ```bash
-curl -X POST "http://localhost:8080/api/v1/matches?team1=India&team2=India&matchType=T20"
+curl -X POST "http://localhost:8080/api/v1/matches?team1=India&team2=India&matchType=T20&matchDate=2026-03-24"
 # Response: 500 Internal Server Error - "A team can not play a match against itself"
 ```
 
@@ -847,23 +1048,42 @@ java -version
 ./gradlew clean build
 ```
 
-**Issue 4: Teams not persisting**
-- The application uses in-memory storage by default
-- Data is lost when the application restarts
-- For persistent storage, implement a database repository
+**Issue 4: MongoDB connection failed**
+```bash
+# Check if MongoDB is running
+docker ps | grep cricket-mongodb
+
+# Or check MongoDB service status
+brew services list | grep mongodb  # macOS
+sudo systemctl status mongod       # Linux
+
+# Restart MongoDB if needed
+docker restart cricket-mongodb
+```
+
+**Issue 5: Port 27018 already in use**
+```bash
+# Find process using port 27018
+lsof -i :27018
+
+# Either kill the process or change MongoDB port in application.properties
+```
 
 ---
 
 ## Performance Considerations
 
-- **In-Memory Storage**: Fast but limited by available RAM
+- **MongoDB Storage**: Persistent and scalable storage solution
 - **Match Simulation**: T20 matches simulate ~240 balls, ODI ~600 balls
 - **Concurrent Requests**: Spring Boot handles multiple requests concurrently
+- **Database Indexing**: Auto-indexing enabled for better query performance
 - **Scalability**: For production, consider:
-  - Database persistence
-  - Caching layer
-  - Load balancing
+  - MongoDB replica sets for high availability
+  - Caching layer (Redis) for frequently accessed data
+  - Load balancing for application servers
   - Async processing for long simulations
+  - Connection pooling optimization
+  - MongoDB sharding for large datasets
 
 ---
 
